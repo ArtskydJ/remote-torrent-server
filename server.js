@@ -5,7 +5,7 @@ var Debug = require('debug')
 var SocketIoServer = require('socket.io')
 var ss = require('socket.io-stream')
 var auth = require('./auth.json')
-var PORT = config.port || 5004
+var PORT = config.port
 
 //instantiate
 var torrenter = new WebTorrent({storage:true})

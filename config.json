@@ -1,7 +1,5 @@
 {
-	"port": 8080,
-	"host": "http://localhost:8080",
-	"host2": "104.131.93.59",
+	"port": 6880,
 	"torrent": {
 		"announce": [
 			"udp://open.demonii.com:1337/announce",
