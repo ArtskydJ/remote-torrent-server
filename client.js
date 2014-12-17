@@ -2,43 +2,58 @@ var fs = require('fs')
 var path = require('path')
 var config = require('./config.json')
 var SocketIoClient = require('socket.io-client')
+var ss = require('socket.io-stream')
 var crypto = require('crypto')
+
 var socket = new SocketIoClient(config.host)
 
-var PORT = config.port || 5004
-var torrentStr = process.argv[2]
+var trntStr = process.argv[2]
 var authStr = process.argv[3]
-var helpStrs = [
-	'Usage:',
-	'  node client.js [trnt] [auth]',
-	'trnt can be one of the following:',
-	'  [magnet uri]',
-	'  [info hash]',
-	'  [http(s) path to torrent file]',
-	'auth must be formatted like:',
-	'  [username]:[password]'
-]
-if (!torrentStr) {
-	helpStrs.forEach(console.log)
-	process.exit(1)
+if (!trntStr || !authStr || !/:/.test(authStr)) {
+	console.log(
+		'Usage:\n' +
+		'  node client.js [trnt] [auth]\n' +
+		'trnt can be one of the following:\n' +
+		'  [magnet uri]\n' +
+		'  [info hash]\n' +
+		'  [http(s) path to torrent file]\n' +
+		'auth must be formatted like:\n' +
+		'  [username]:[password]'
+	)
+	quit('\nIncorrect usage', 1)
 }
 
 socket.on('connect', function () {
-	console.log('Authenticate!')
-	authStr = authStr.split(':')
-	var user = authStr[0]
-	var sha1 = crypto.createHash('sha1').end(authStr[1], 'utf8')
-	console.log('user: ' + user + ', sha1: ' + sha1)
+	var cred = authStr.split(':')
+	var user = cred[0]
+	var sha1 = hash('sha1', cred[1])
 	socket.emit('authenticate', user, sha1, function (success) {
 		if (success) {
-			console.log('Sucessful login')
-			socket.emit('download torrent', torrentStr)
-		} else {
-			console.log('Unsucessful login')
+			socket.emit('download torrent', trntStr)
 		}
 	})
-	
-	var dst = fs.createWriteStream(socket.path)
-	socket.pipe(dst)
 })
 
+ss(socket).on('file', save)
+socket.on('disconnect', quit.bind(null, 'Disconnected from server'))
+socket.on('msg', console.log)
+socket.on('quit', quit)
+
+function save(src, meta, next) {
+	var dst = fs.createWriteStream(meta.path)
+	src.pipe(dst)
+	src.on('end', next)
+}
+
+function hash(type, str) {
+	return crypto
+		.createHash(type)
+		.update(str)
+		.digest('hex')
+}
+
+function quit(msg, code) {
+	msg && console.log(msg)
+	console.log('Shutting down')
+	process.exit(code || 0)
+}
