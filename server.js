@@ -1,20 +1,22 @@
 var WebTorrent = require('webtorrent')
-var config = require('./config.json')
 var each = require('each-series')
 var Debug = require('debug')
-var SocketIoServer = require('socket.io')
-var ss = require('socket.io-stream')
+var http = require('http')
+var Io = require('socket.io')
 var auth = require('./auth.json')
-var PORT = config.port
+var torrentConfig = require('./torrentConfig.json')
+var PORT = 8080
 
 //instantiate
+var server = http.createServer(onReq)
 var torrenter = new WebTorrent({storage:true})
-var server = new SocketIoServer(PORT, { serveClient: false })
+var io = new Io(server, { serveClient: false })
 var authenticating = false
-var dbg = Debug('server')
+var dbg = console.log //Debug('rts')
+server.listen(PORT)
 dbg('listening on port ' + PORT)
 
-server.on('connect', function (socket) {
+io.on('connect', function (socket) {
 	var authed = false
 	var torrentList = [] //to delete on disconnect
 	msg('Connection established')
@@ -35,7 +37,7 @@ server.on('connect', function (socket) {
 	socket.on('download torrent', function (trntStr) {
 		if (authed) {
 			dbg('torrent: "' + trntStr + '"')
-			var t = torrenter.download(trntStr, config.torrent, onTrnt)
+			var t = torrenter.download(trntStr, torrentConfig, onTrnt)
 			msg('Downloading ' + t.infoHash)
 		}
 	})
@@ -53,15 +55,8 @@ server.on('connect', function (socket) {
 		msg('Finished downloading ' + trnt.infoHash)
 		each(trnt.files, function e(file, i, next) {
 			msg('Streaming ' + file.name)
-			var meta = {
-				name: file.name,
-				path: file.path,
-				size: file.size
-			}
-			var src = file.createReadStream()
-			var dst = ss.createStream()
-			ss(socket).emit('file', dst, meta, next) //'next' is a cb
-			src.pipe(dst)
+			var url = trnt.infoHash + '/' + i
+			socket.emit('file', url, file.name, next) //'next' is a cb
 		}, function done(err) {
 			err ?
 				socket.emit('quit', err.message, err.code) :
@@ -69,3 +64,16 @@ server.on('connect', function (socket) {
 		})
 	}
 })
+
+function onReq(req, res) {
+	var infoHash = req.url.split('/')
+	var n = parseInt(infoHash[1])
+	infoHash = infoHash[0]
+	console.log(req.url, 'request', infoHash, n)
+
+	torrenter
+		.get(infoHash)
+		.files[n]
+		.createReadStream()
+		.pipe(res)
+}
